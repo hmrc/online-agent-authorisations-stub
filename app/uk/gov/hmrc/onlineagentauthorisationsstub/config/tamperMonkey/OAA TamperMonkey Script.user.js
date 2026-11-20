@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OAA Script
 // @namespace    http://localhost
-// @lastupdate   10/11/2026
-// @version      1.0.2
+// @lastupdate   20/11/2026
+// @version      1.0.4
 // @description  Automates logging in to Online Agent Authorisations (OAA) via auth-login-stub. Install Tampermonkey on Chrome or Greasemonkey on Firefox and add this to your userscripts.
 // @match        http://localhost:9949/gg/sign-in*
 // @match        http://localhost:9949/auth-login-stub/gg-sign-in*
@@ -14,7 +14,7 @@
 // ==/UserScript==
 
 // Note: This should match the version on line 5
-var scriptVersion = "1.0.2";
+var scriptVersion = "1.0.4";
 
 // Where to land after sign in
 var servicePath = "/online-agent-authorisations-frontend";
@@ -49,10 +49,7 @@ function allEnrolments(status) {
     return Object.keys(ENROLMENTS).map(function (code) { return enrol(code, status); });
 }
 
-// ---------------------------------------------------------------------------
-// Profiles
-//   expect: which page the profile should land on (AC1 / Activate / Unauthorised)
-// ---------------------------------------------------------------------------
+
 var userProfiles = [
     { divider: "Getting Started" },
     { description: "Agent - all six enrolments activated", affinityGroup: "Agent", agentCode: "AGENTCODE1", email: "agent@example.com", expect: "AC1", enrolments: allEnrolments(ACTIVATED) },
@@ -64,6 +61,15 @@ var userProfiles = [
     { description: "Agent - VAT services (HMCE-VAT-AGNT)",   affinityGroup: "Agent", agentCode: "AGENTCODE1", email: "agent@example.com", expect: "AC1", enrolments: [enrol("HMCE")] },
     { description: "Agent - VAT services (HMRC-NOVRN-AGNT)", affinityGroup: "Agent", agentCode: "AGENTCODE1", email: "agent@example.com", expect: "AC1", enrolments: [enrol("NOVRN")] },
     { description: "Agent - MGD only (HMRC-MGD-AGNT)",       affinityGroup: "Agent", agentCode: "AGENTCODE1", email: "agent@example.com", expect: "AC1", enrolments: [enrol("MGD")] },
+
+    { divider: "Request Counts" },
+    { description: "Agent - 2 unsubmitted, 3 waiting for a code", affinityGroup: "Agent", agentCode: "AGENTCODE1",          email: "agent@example.com", expect: "AC1",   enrolments: [enrol("SA")] },
+    { description: "Agent - no requests (0 and 0)",              affinityGroup: "Agent", agentCode: "NOREQUESTS",          email: "agent@example.com", expect: "AC1",   enrolments: [enrol("SA")] },
+    { description: "Agent - backend error (500)",                affinityGroup: "Agent", agentCode: "INTERNALSERVERERROR", email: "agent@example.com", expect: "Error", enrolments: [enrol("SA")] },
+
+    { divider: "Credential Role" },
+    { description: "Administrator (User) - sees every Your account link",              affinityGroup: "Agent", agentCode: "AGENTCODE1", email: "agent@example.com", credentialRole: "User",      expect: "AC1", enrolments: [enrol("SA")] },
+    { description: "Assistant - only change details and change password, no admin links", affinityGroup: "Agent", agentCode: "AGENTCODE1", email: "agent@example.com", credentialRole: "Assistant", expect: "AC1", enrolments: [enrol("SA")] },
 
     { divider: "Mixed Enrolments" },
     { description: "Agent - SA activated, CT not yet activated",           affinityGroup: "Agent", agentCode: "AGENTCODE1", email: "agent@example.com", expect: "AC1", enrolments: [enrol("SA"), enrol("CT", NOT_YET)] },
@@ -88,6 +94,8 @@ var userProfiles = [
 var sectionColors = {
     'getting-started':   '#3b82f6',
     'single-enrolment':  '#10b981',
+    'request-counts':    '#0ea5e9',
+    'credential-role':   '#14b8a6',
     'mixed-enrolments':  '#8b5cf6',
     'not-activated':     '#f59e0b',
     'unauthorised':      '#ef4444'
@@ -231,6 +239,7 @@ function createOverlay() {
     .user-type-selector .row-expect.expect-ac1 { background: #dcfce7; color: #166534; }
     .user-type-selector .row-expect.expect-activate { background: #fef3c7; color: #92400e; }
     .user-type-selector .row-expect.expect-unauthorised { background: #fee2e2; color: #991b1b; }
+    .user-type-selector .row-expect.expect-error { background: #e5e7eb; color: #374151; }
     .user-type-selector .row-tech { color: #94a3b8; font-size: 11px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.01em; }
 
     .user-type-selector[data-section] { border-left: 3px solid transparent; }
@@ -384,7 +393,7 @@ function createOverlay() {
               <span class='help-step-num'>2</span>
               <span class='help-step-title'>Add a profile entry</span>
             </div>
-            <p class='help-step-desc'>Use <code>enrol(code, status, value)</code> to add enrolments. Codes are <code>SA</code>, <code>CT</code>, <code>PAYE</code>, <code>HMCE</code>, <code>NOVRN</code> and <code>MGD</code>. Status defaults to <code>ACTIVATED</code> and the value defaults to the one in <code>ENROLMENTS</code>. <code>expect</code> is <code>AC1</code>, <code>Activate</code> or <code>Unauthorised</code>, and only drives the badge.</p>
+            <p class='help-step-desc'>Use <code>enrol(code, status, value)</code> to add enrolments. Codes are <code>SA</code>, <code>CT</code>, <code>PAYE</code>, <code>HMCE</code>, <code>NOVRN</code> and <code>MGD</code>. Status defaults to <code>ACTIVATED</code> and the value defaults to the one in <code>ENROLMENTS</code>. <code>expect</code> is <code>AC1</code>, <code>Activate</code>, <code>Unauthorised</code> or <code>Error</code>, and only drives the badge.</p>
             <div class='help-code-block'>
               <pre>${escapeHtml(profileSnippet)}</pre>
               <button class='help-copy-btn'>Copy</button>
@@ -629,6 +638,8 @@ function submitForm(entry, autoSubmit) {
     $("input[type='text'][name='authorityId']").val(entry.authorityId || "");
     $("select[name='affinityGroup']").val(entry.affinityGroup).trigger('change');
     $("input[name='email']").val(entry.email || "");
+    // Profiles without a role sign in as an administrator
+    $("select[name='credentialRole']").val(entry.credentialRole || "User");
     $("input[type='text'][name='agent.agentCode']").val(entry.agentCode || "");
 
     clearEnrolmentRows();
