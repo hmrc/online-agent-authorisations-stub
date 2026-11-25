@@ -12,6 +12,7 @@ lazy val microservice = Project("online-agent-authorisations-stub", file("."))
     // https://www.scala-lang.org/2021/01/12/configuring-and-suppressing-warnings.html
     // suppress warnings in generated routes files
     scalacOptions += "-Wconf:src=routes/.*:s",
+    PlayKeys.playDefaultPort := 20112,
   )
   .settings(CodeCoverageSettings.settings: _*)
 
